@@ -67,8 +67,8 @@ export function transformMelissaRecord(record: MelissaRecord): PersonData | null
         city:   hist.City  ?? "",
         state:  hist.State ?? "",
         zip:    hist.PostalCode || undefined,
-        from:   formatMelissaDate(hist.DateFirstSeen),
-        to:     formatMelissaDate(hist.DateLastSeen),
+        from:   formatMelissaDate(hist.DateFirstSeen ?? ""),
+        to:     formatMelissaDate(hist.DateLastSeen ?? ""),
       });
     }
   }
