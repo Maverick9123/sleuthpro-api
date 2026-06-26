@@ -1,6 +1,4 @@
 // SleuthPro API — Melissa Response → PersonData Transformer
-// Maps Melissa Personator API records to the PersonData model
-// the iOS app expects (PersonReport.swift)
 // DreamTeamApps © 2026
 
 import {
@@ -43,10 +41,11 @@ function determineConfidence(results: string): MatchConfidence {
 }
 
 export function transformMelissaRecord(record: MelissaRecord): PersonData | null {
-  if (!record.FirstName && !record.LastName) return null;
+  const firstName = record.NameFirst?.trim() ?? "";
+  const lastName  = record.NameLast?.trim()  ?? "";
+  if (!firstName && !lastName) return null;
 
   const addresses: AddressEntry[] = [];
-
   if (record.AddressLine1 && record.AddressLine1.trim() !== "") {
     addresses.push({
       id:     newId(),
@@ -111,9 +110,7 @@ export function transformMelissaRecord(record: MelissaRecord): PersonData | null
         address:        prop.Address.trim(),
         city:           prop.City  ?? "",
         state:          prop.State ?? "",
-        estimatedValue: rawValue > 0
-          ? `$${rawValue.toLocaleString("en-US")}`
-          : undefined,
+        estimatedValue: rawValue > 0 ? `$${rawValue.toLocaleString("en-US")}` : undefined,
         ownershipType:  prop.OwnerType?.trim() || undefined,
       });
     }
@@ -124,11 +121,7 @@ export function transformMelissaRecord(record: MelissaRecord): PersonData | null
 
   return {
     id:   record.RecordID ?? newId(),
-    name: {
-      first:  record.FirstName?.trim() ?? "",
-      middle: record.MiddleName?.trim() || undefined,
-      last:   record.LastName?.trim()  ?? "",
-    },
+    name: { first: firstName, middle: record.NameMiddle?.trim() || undefined, last: lastName },
     age,
     aliases:    [],
     addresses,
