@@ -4,7 +4,12 @@ import { callMelissa } from "@/lib/melissa";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const raw = await callMelissa({ full: "John Smith", state: "CA" });
+    const raw = await callMelissa({
+      full:  "John Smith",
+      a1:    "123 Main St",
+      city:  "Los Angeles",
+      state: "CA",
+    });
     return res.status(200).json(raw);
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
