@@ -78,7 +78,7 @@ export function transformMelissaRecord(record: MelissaRecord): PersonData | null
     phones.push({
       id:      newId(),
       number:  record.PhoneNumber.trim(),
-      type:    formatPhoneType(record.PhoneType),
+      type:    formatPhoneType(record.PhoneType ?? ""),
       carrier: record.PhoneCarrier?.trim() || undefined,
     });
   }
