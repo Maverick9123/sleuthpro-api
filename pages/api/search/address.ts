@@ -3,7 +3,7 @@
 // DreamTeamApps © 2026
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { searchByAddress } from "@/lib/melissa";
+import { callMelissa } from "@/lib/melissa";
 import { transformMelissaRecord } from "@/lib/transform";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "street, city, and state are required" });
     }
 
-    const data = await searchByAddress({ street, city, state });
+    const data = await callMelissa({ a1: street, city, state });
     const results = data.Records.map(transformMelissaRecord);
     return res.status(200).json(results);
   } catch (err) {

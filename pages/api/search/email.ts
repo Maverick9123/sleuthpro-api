@@ -3,7 +3,7 @@
 // DreamTeamApps © 2026
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { searchByEmail } from "@/lib/melissa";
+import { callMelissa } from "@/lib/melissa";
 import { transformMelissaRecord } from "@/lib/transform";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -18,7 +18,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "emailAddress is required" });
     }
 
-    const data = await searchByEmail({ emailAddress });
+    const data = await callMelissa({ email: emailAddress });
     const results = data.Records.map(transformMelissaRecord);
     return res.status(200).json(results);
   } catch (err) {
