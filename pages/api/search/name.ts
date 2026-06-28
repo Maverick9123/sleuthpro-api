@@ -1,29 +1,50 @@
-// SleuthPro API — Name Search
-// POST /api/search/name
-// DreamTeamApps © 2026
-
 import type { NextApiRequest, NextApiResponse } from "next";
-import { callMelissa } from "@/lib/melissa";
-import { transformMelissaRecord } from "@/lib/transform";
+import { callEnformion }            from "../../../lib/enformion";
+import { transformEnformionRecord } from "../../../lib/transformEnformion";
+import type { PersonData }          from "../../../lib/transformEnformion";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  const { firstName, lastName, middleName, state, city } = req.body as {
+    firstName?:  string;
+    lastName?:   string;
+    middleName?: string;
+    state?:      string;
+    city?:       string;
+  };
+
+  if (!firstName || !lastName) {
+    return res.status(400).json({ error: "firstName and lastName are required" });
+  }
+
   try {
-    const { firstName, lastName, middleName, state } = req.body;
+    const data = await callEnformion(
+      {
+        FirstName:  firstName.trim(),
+        LastName:   lastName.trim(),
+        MiddleName: middleName?.trim(),
+        Addresses:  state || city
+          ? [{ City: city?.trim(), State: state?.trim() }]
+          : undefined,
+        Page:           1,
+        ResultsPerPage: 10,
+      },
+      "Person"
+    );
 
-    if (!firstName || !lastName) {
-      return res.status(400).json({ error: "firstName and lastName are required" });
-    }
+    const results: PersonData[] = (data.People ?? [])
+      .map(transformEnformionRecord)
+      .filter((r): r is PersonData => r !== null);
 
-    const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ");
-    const data = await callMelissa({ full: fullName, state });
-    const results = data.Records.map(transformMelissaRecord);
-    return res.status(200).json(results);
+    return res.status(200).json({ results, totalCount: data.TotalCount ?? results.length });
   } catch (err) {
-    console.error("Name search error:", err);
-    return res.status(500).json({ error: "Search failed" });
+    console.error("[search/name] EnformionGO error:", err);
+    return res.status(500).json({ error: "Search failed. Please try again." });
   }
 }
