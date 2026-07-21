@@ -11,7 +11,10 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { email } = req.body as { email?: string };
+  // The shipped iOS app sends `emailAddress` (EmailSearchParams); accept
+  // `email` too for direct/testing callers.
+  const body = req.body as { emailAddress?: string; email?: string };
+  const email = body.emailAddress ?? body.email;
 
   if (!email) {
     return res.status(400).json({ error: "email is required" });
