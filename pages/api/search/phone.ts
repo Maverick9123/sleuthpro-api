@@ -37,7 +37,8 @@ export default async function handler(
       .map(transformEnformionRecord)
       .filter((r): r is PersonData => r !== null);
 
-    return res.status(200).json({ results, totalCount: data.TotalCount ?? results.length });
+    // Bare array — the shipped iOS app decodes `[PersonData]` at the top level.
+    return res.status(200).json(results);
   } catch (err) {
     console.error("[search/phone] EnformionGO error:", err);
     return res.status(500).json({ error: "Search failed. Please try again." });
