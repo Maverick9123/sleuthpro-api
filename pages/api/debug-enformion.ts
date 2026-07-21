@@ -41,6 +41,19 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
     let data: any = null;
     try { data = JSON.parse(rawText); } catch { /* leave null */ }
 
+    // PII-safe recursive shape: keys + types only, values discarded.
+    const shape = (v: any, depth = 0): any => {
+      if (v === null) return "null";
+      if (Array.isArray(v)) return v.length ? [shape(v[0], depth + 1)] : "[]";
+      if (typeof v === "object") {
+        if (depth > 5) return "object";
+        const o: any = {};
+        for (const k of Object.keys(v)) o[k] = shape(v[k], depth + 1);
+        return o;
+      }
+      return typeof v; // "string" | "number" | "boolean"
+    };
+
     // PII-safe summary only.
     const people = data?.persons ?? data?.People ?? data?.results ?? [];
     const summary = {
@@ -54,11 +67,10 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
       pagination: data?.pagination ?? data?.Pagination ?? null,
       totalCount: data?.totalCount ?? data?.TotalCount ?? null,
       peopleCount: Array.isArray(people) ? people.length : "not-an-array",
-      firstPersonKeys:
+      firstPersonShape:
         Array.isArray(people) && people[0] && typeof people[0] === "object"
-          ? Object.keys(people[0]) // structure only, no values
+          ? shape(people[0]) // nested keys + types, NO values
           : null,
-      rawTextSnippet: rawText.slice(0, 300), // truncated; may show error text (no PII when empty)
     };
 
     return res.status(200).json({ credsPresent, summary });
