@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { callEnformion }            from "../../../lib/enformion";
 import { transformEnformionRecord } from "../../../lib/transformEnformion";
 import type { PersonData }          from "../../../lib/transformEnformion";
+import { toStateCode }              from "../../../lib/usStates";
 
 export default async function handler(
   req: NextApiRequest,
@@ -30,7 +31,7 @@ export default async function handler(
         LastName:   lastName.trim(),
         MiddleName: middleName?.trim(),
         Addresses:  state || city
-          ? [{ City: city?.trim(), State: state?.trim() }]
+          ? [{ City: city?.trim(), State: toStateCode(state) }]
           : undefined,
         Page:           1,
         ResultsPerPage: 10,
