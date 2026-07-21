@@ -7,6 +7,9 @@ export type EnformionSearchType =
   | "ReversePhonePerson"
   | "ReversePhonePersonTeaser";
 
+// ── REQUEST ──────────────────────────────────────────────────────
+// Enformion accepts PascalCase request fields (verified live: a
+// PascalCase FirstName/LastName search returns results). Left as-is.
 export interface EnformionRequestBody {
   FirstName?:      string;
   MiddleName?:     string;
@@ -27,63 +30,85 @@ export interface EnformionRequestBody {
   ResultsPerPage?: number;
 }
 
+// ── RESPONSE ─────────────────────────────────────────────────────
+// The live Enformion response is camelCase (verified via a PII-safe
+// structure dump on 2026-07-21). The previous PascalCase types here
+// never matched, so every real search parsed to zero people.
 export interface EnformionName {
-  FirstName?:  string;
-  MiddleName?: string;
-  LastName?:   string;
+  prefix?:     string;
+  firstName?:  string;
+  middleName?: string;
+  lastName?:   string;
+  suffix?:     string;
+  rawNames?:   string[];
 }
 
 export interface EnformionAddress {
-  AddressLine1?:      string;
-  City?:              string;
-  State?:             string;
-  Zip?:               string;
-  Type?:              string;
-  FirstReportedDate?: string;
-  LastReportedDate?:  string;
+  houseNumber?:         string;
+  streetPreDirection?:  string;
+  streetName?:          string;
+  streetPostDirection?: string;
+  streetType?:          string;
+  unit?:                string;
+  city?:                string;
+  state?:               string;
+  county?:              string;
+  zip?:                 string;
+  zip4?:                string;
+  firstReportedDate?:   string;
+  lastReportedDate?:    string;
+  fullAddress?:         string;
 }
 
 export interface EnformionPhone {
-  PhoneNumber?: string;
-  PhoneType?:   string;
-  Provider?:    string;
-  IsPrimary?:   boolean;
+  phoneNumber?:       string;
+  company?:           string;
+  location?:          string;
+  phoneType?:         string;
+  isConnected?:       boolean;
+  firstReportedDate?: string;
+  lastReportedDate?:  string;
 }
 
 export interface EnformionEmail {
-  Email?: string;
+  emailAddress?: string;
+  isPremium?:    boolean;
 }
 
 export interface EnformionRelative {
-  Name?:     EnformionName;
-  Relation?: string;
-  Age?:      number;
-}
-
-export interface EnformionProperty {
-  PropertyType?:   string;
-  OwnerOccupied?:  boolean;
-  EstimatedValue?: string;
+  firstName?:     string;
+  middleName?:    string;
+  lastName?:      string;
+  relativeType?:  string;
+  relativeLevel?: string;
 }
 
 export interface EnformionPerson {
-  Id?:         string;
-  Names?:      EnformionName[];
-  Age?:        number;
-  Dob?:        string;
-  Addresses?:  EnformionAddress[];
-  Phones?:     EnformionPhone[];
-  Emails?:     EnformionEmail[];
-  Relatives?:  EnformionRelative[];
-  Associates?: EnformionRelative[];
-  Properties?: EnformionProperty[];
+  tahoeId?:           string;
+  name?:              EnformionName;
+  age?:               number;
+  dob?:               string;
+  akas?:              EnformionName[];
+  locations?:         Array<{ city?: string; state?: string }>;
+  addresses?:         EnformionAddress[];
+  phoneNumbers?:      EnformionPhone[];
+  emailAddresses?:    EnformionEmail[];
+  relativesSummary?:  EnformionRelative[];
+  associatesSummary?: EnformionRelative[];
+  fullName?:          string;
 }
 
 export interface EnformionResponse {
-  People?:         EnformionPerson[];
-  TotalCount?:     number;
-  Page?:           number;
-  ResultsPerPage?: number;
+  persons?: EnformionPerson[];
+  pagination?: {
+    currentPageNumber?: number;
+    resultsPerPage?:    number;
+    totalPages?:        number;
+    totalResults?:      number;
+  };
+  isError?:   boolean;
+  error?:     unknown;
+  requestId?: string;
 }
 
 export async function callEnformion(

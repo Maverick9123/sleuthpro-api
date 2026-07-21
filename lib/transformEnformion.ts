@@ -84,15 +84,32 @@ export interface PersonData {
 
 function nameParts(name: EnformionName | undefined): PersonName {
   return {
-    first: name?.FirstName?.trim() ?? "",
-    middle: name?.MiddleName?.trim() || undefined,
-    last: name?.LastName?.trim() ?? "",
+    first: name?.firstName?.trim() ?? "",
+    middle: name?.middleName?.trim() || undefined,
+    last: name?.lastName?.trim() ?? "",
   };
 }
 
-function fullName(name: EnformionName | undefined): string {
+function fullName(
+  name: { firstName?: string; middleName?: string; lastName?: string } | undefined
+): string {
   if (!name) return "";
-  return [name.FirstName, name.MiddleName, name.LastName]
+  return [name.firstName, name.middleName, name.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
+/** Build a street line from Enformion's component fields. */
+function streetLine(a: {
+  houseNumber?: string; streetPreDirection?: string; streetName?: string;
+  streetPostDirection?: string; streetType?: string; unit?: string;
+}): string {
+  return [
+    a.houseNumber, a.streetPreDirection, a.streetName,
+    a.streetPostDirection, a.streetType, a.unit,
+  ]
+    .map((s) => s?.trim())
     .filter(Boolean)
     .join(" ")
     .trim();
@@ -109,74 +126,65 @@ export function transformEnformionRecord(
 ): PersonData | null {
   if (!person) return null;
 
-  const primary = nameParts(person.Names?.[0]);
+  const primary = nameParts(person.name);
   if (!primary.first && !primary.last) return null;
 
-  const pid = person.Id?.trim() || `person-${idx}`;
+  const pid = person.tahoeId?.trim() || `person-${idx}`;
 
-  // Extra name records become aliases.
-  const aliases = (person.Names ?? [])
-    .slice(1)
+  // Alternate names (akas) become aliases, de-duped against the primary.
+  const primaryFull = fullName(person.name).toLowerCase();
+  const aliases = (person.akas ?? [])
     .map(fullName)
-    .filter((s) => s.length > 0);
+    .filter((s) => s.length > 0 && s.toLowerCase() !== primaryFull);
 
-  const addresses: AddressEntry[] = (person.Addresses ?? []).map((addr, i) => ({
+  const addresses: AddressEntry[] = (person.addresses ?? []).map((addr, i) => ({
     id:     `${pid}-addr-${i}`,
-    street: addr.AddressLine1?.trim() ?? "",
-    city:   addr.City?.trim() ?? "",
-    state:  addr.State?.trim() ?? "",
-    zip:    addr.Zip?.trim() || undefined,
-    from:   addr.FirstReportedDate || undefined,
-    to:     addr.LastReportedDate || undefined,
+    street: streetLine(addr) || addr.fullAddress?.trim() || "",
+    city:   addr.city?.trim() ?? "",
+    state:  addr.state?.trim() ?? "",
+    zip:    addr.zip?.trim() || undefined,
+    from:   addr.firstReportedDate || undefined,
+    to:     addr.lastReportedDate || undefined,
   }));
 
-  const phones: PhoneEntry[] = (person.Phones ?? []).map((ph, i) => ({
+  const phones: PhoneEntry[] = (person.phoneNumbers ?? []).map((ph, i) => ({
     id:      `${pid}-phone-${i}`,
-    number:  ph.PhoneNumber?.trim() ?? "",
-    type:    ph.PhoneType?.trim() || "unknown",
-    carrier: ph.Provider?.trim() || undefined,
+    number:  ph.phoneNumber?.trim() ?? "",
+    type:    ph.phoneType?.trim() || "unknown",
+    carrier: ph.company?.trim() || undefined,
   }));
 
-  const emails: string[] = (person.Emails ?? [])
-    .map((e) => e.Email?.trim())
+  const emails: string[] = (person.emailAddresses ?? [])
+    .map((e) => e.emailAddress?.trim())
     .filter((e): e is string => !!e && e.length > 0);
 
   const relatives: RelativeEntry[] = [
-    ...(person.Relatives  ?? []),
-    ...(person.Associates ?? []),
-  ]
-    .map((r, i) => ({
+    ...(person.relativesSummary ?? []).map((r, i) => ({
       id:           `${pid}-rel-${i}`,
-      name:         fullName(r.Name),
-      relationship: r.Relation?.trim() || "Relative",
-    }))
-    .filter((r) => r.name.length > 0);
-
-  // Enformion's property record carries no street/city/state, only a type
-  // and estimated value — so we surface those and leave the rest blank
-  // rather than fabricate an address.
-  const property: PropertyEntry[] = (person.Properties ?? []).map((p, i) => ({
-    id:            `${pid}-prop-${i}`,
-    address:       p.PropertyType?.trim() || "Property record",
-    city:          "",
-    state:         "",
-    estimatedValue: p.EstimatedValue?.trim() || undefined,
-    ownershipType:  p.OwnerOccupied ? "Owner Occupied" : undefined,
-  }));
+      name:         fullName(r),
+      relationship: r.relativeType?.trim() || "Relative",
+    })),
+    ...(person.associatesSummary ?? []).map((r, i) => ({
+      id:           `${pid}-assoc-${i}`,
+      name:         fullName(r),
+      relationship: "Associate",
+    })),
+  ].filter((r) => r.name.length > 0);
 
   return {
     id:              pid,
     name:            primary,
-    age:             typeof person.Age === "number" ? person.Age : undefined,
+    age:             typeof person.age === "number" ? person.age : undefined,
     aliases,
     addresses,
     phones,
     emails,
     relatives,
-    // Enformion (this plan) returns no social or employment data.
+    // This Enformion response carries no social handles or employment history,
+    // and property data needs a separate lookup — surfaced as empty for now.
     social:          [],
     employment:      [],
-    property,
+    property:        [],
     matchConfidence: idx === 0 ? "High" : "Possible",
   };
 }

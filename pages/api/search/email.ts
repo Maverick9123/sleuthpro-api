@@ -27,7 +27,7 @@ export default async function handler(
       "Person"
     );
 
-    const results: PersonData[] = (data.People ?? [])
+    const results: PersonData[] = (data.persons ?? [])
       .map(transformEnformionRecord)
       .filter((r): r is PersonData => r !== null);
 
