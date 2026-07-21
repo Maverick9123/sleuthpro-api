@@ -35,9 +35,6 @@ export default async function handler(
     return res.status(200).json(results);
   } catch (err) {
     console.error("[search/email] EnformionGO error:", err);
-    return res.status(500).json({
-      error: "Search failed. Please try again.",
-      _debug: err instanceof Error ? err.message : String(err), // TEMP — remove after diagnosis
-    });
+    return res.status(500).json({ error: "Search failed. Please try again." });
   }
 }

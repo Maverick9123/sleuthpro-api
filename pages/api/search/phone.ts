@@ -24,13 +24,16 @@ export default async function handler(
   }
 
   try {
+    // Use the "Person" search type (which this Access Profile IS entitled to)
+    // with the phone as a search field, rather than the separate
+    // "ReversePhonePerson" product the profile is NOT provisioned for.
     const data = await callEnformion(
       {
         Phone:          digits,
         Page:           1,
         ResultsPerPage: 10,
       },
-      "ReversePhonePerson"
+      "Person"
     );
 
     const results: PersonData[] = (data.persons ?? [])
