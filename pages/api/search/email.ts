@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { callEnformion }            from "../../../lib/enformion";
 import { transformEnformionRecord } from "../../../lib/transformEnformion";
 import type { PersonData }          from "../../../lib/transformEnformion";
+import { rateGuard, clientIp }     from "../../../lib/rateGuard";
 
 export default async function handler(
   req: NextApiRequest,
@@ -18,6 +19,25 @@ export default async function handler(
 
   if (!email) {
     return res.status(400).json({ error: "email is required" });
+  }
+
+
+  // Abuse guard: cap per-IP bursts and total daily calls so nobody can run up
+  // the Enformion bill. Fail-open — no effect until Vercel KV is connected.
+  const guard = await rateGuard(
+    "searchquest",
+    clientIp(req.headers),
+    Number(process.env.SEARCH_IP_PER_MIN ?? 10),
+    Number(process.env.SEARCH_GLOBAL_PER_DAY ?? 400)
+  );
+  if (!guard.ok) {
+    res.setHeader("Retry-After", String(guard.retryAfter));
+    return res.status(429).json({
+      error:
+        guard.reason === "global"
+          ? "Search is temporarily unavailable due to heavy use. Please try again later."
+          : "Too many searches in a short time. Please wait a moment and try again.",
+    });
   }
 
   try {
