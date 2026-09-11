@@ -93,6 +93,14 @@ export default async function handler(
     return res.status(200).json(results);
   } catch (err) {
     console.error("[search/property] EnformionGO error:", err);
+    // Debug-only: surface the upstream error message (carries Enformion's
+    // HTTP status + body) so we can confirm entitlement/endpoint. Removed
+    // before release along with the rest of the debug path.
+    if (debug) {
+      return res
+        .status(500)
+        .json({ _debug: true, error: err instanceof Error ? err.message : String(err) });
+    }
     return res.status(500).json({ error: "Search failed. Please try again." });
   }
 }
