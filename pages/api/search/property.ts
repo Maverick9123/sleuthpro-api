@@ -73,7 +73,7 @@ export default async function handler(
         : {}),
       Page:           1,
       ResultsPerPage: 10,
-    }, searchType || "Property");
+    }, searchType || "PropertyV2");
 
     // Debug toggle: surface the raw Enformion payload so we can confirm the
     // exact field nesting/casing against a real response. Never sent to the app.

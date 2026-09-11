@@ -1,12 +1,16 @@
 // Enformion Property Search (PropertyV2Search) integration.
 //
-// Same galaxy-ap auth as lib/enformion.ts, different endpoint. The live Enformion
-// response is camelCase even though the API docs render PascalCase (the same trap
-// that once made PersonSearch parse to zero results — see lib/enformion.ts note),
-// so every read below tries BOTH casings via pick(). Field nesting is read
-// defensively from either `property.summary` or the first `assessorRecords[]`
-// entry, so slight shape differences don't blank the card. Confirm against a live
-// response with the route's `debug:true` toggle, then tighten if desired.
+// Same galaxy-ap auth as lib/enformion.ts, different endpoint. Enformion API
+// customers MUST send the galaxy-search-type header — for /PropertyV2Search the
+// required value is "PropertyV2" (confirmed live 2026-09-11; "Property" is
+// rejected as "not valid at /PropertyV2Search"). The live response is camelCase
+// (propertyV2Records[].property.summary.*), so the transform targets that shape;
+// pick() still tries both casings as a safety net. Confirmed field paths:
+//   summary.address {fullAddress, city, state, zipCode, ...}
+//   summary.currentOwners[].name {fullName, firstName, lastName}   ← name is an OBJECT
+//   summary.assessedValue {price, year}   summary.purchasePrice {price, date}
+//   summary.propertyDetails {beds, baths, yearBuilt, squareFootage, lotSize, type}
+//   summary.propertyValue {totalValue, ...}   summary.isOwnerOccupied
 
 const ENFORMION_BASE =
   process.env.ENFORMION_API_BASE ?? "https://devapi.enformion.com";
@@ -58,7 +62,7 @@ export interface EnformionPropertyResponse {
 
 export async function callEnformionProperty(
   body: PropertyRequestBody,
-  searchType: string = "Property"
+  searchType: string = "PropertyV2"
 ): Promise<EnformionPropertyResponse> {
   const apName     = process.env.ENFORMION_AP_NAME;
   const apPassword = process.env.ENFORMION_AP_PASSWORD;
@@ -76,7 +80,7 @@ export async function callEnformionProperty(
       "Accept":             "application/json",
       "galaxy-ap-name":     apName,
       "galaxy-ap-password": apPassword,
-      "galaxy-search-type": searchType,   // required by Enformion for API customers
+      "galaxy-search-type": searchType,   // required; "PropertyV2" for /PropertyV2Search
     },
     body: JSON.stringify(body),
   });
@@ -91,13 +95,12 @@ export async function callEnformionProperty(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-/** First defined value among candidate keys (case-insensitive-ish). */
+/** First defined value among candidate keys (tries the given key and its lower-first-letter form). */
 function pick(obj: unknown, ...keys: string[]): unknown {
   if (!obj || typeof obj !== "object") return undefined;
   const o = obj as Any;
   for (const k of keys) {
     if (o[k] !== undefined && o[k] !== null) return o[k];
-    // try lowercased first-letter and other casing
     const lc = k.charAt(0).toLowerCase() + k.slice(1);
     if (o[lc] !== undefined && o[lc] !== null) return o[lc];
   }
@@ -105,6 +108,7 @@ function pick(obj: unknown, ...keys: string[]): unknown {
 }
 function str(v: unknown): string | undefined {
   if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v === "object") return undefined;   // never stringify an object
   return String(v);
 }
 function money(v: unknown): string | undefined {
@@ -121,58 +125,80 @@ export function propertyRecords(data: EnformionPropertyResponse): Any[] {
   return arr(pick(data, "PropertyV2Records", "propertyV2Records", "PropertyRecords", "propertyRecords"));
 }
 
+/** One owner entry → a display name. `name` is an object {fullName, firstName, lastName}. */
+function ownerName(o: Any): string | undefined {
+  const n = pick(o, "name", "Name");
+  if (n && typeof n === "object") {
+    return (
+      str(pick(n, "fullName", "FullName")) ??
+      ([str(pick(n, "firstName", "FirstName")), str(pick(n, "lastName", "LastName"))]
+        .filter(Boolean)
+        .join(" ") || undefined)
+    );
+  }
+  return str(n);
+}
+
 /** Turn one Enformion PropertyV2 record into the clean PropertyData shape. */
 export function transformProperty(rec: Any): PropertyData | null {
   if (!rec || typeof rec !== "object") return null;
 
-  const property = pick(rec, "Property", "property") as Any | undefined;
-  const summary  = pick(property, "Summary", "summary") as Any | undefined;
-  const assessors = arr(pick(property, "AssessorRecords", "assessorRecords"));
-  const a0 = assessors[0] ?? {};
+  const property = pick(rec, "property", "Property") as Any | undefined;
+  const summary  = pick(property, "summary", "Summary") as Any | undefined;
+  if (!summary) return null;
 
-  // Address — prefer summary's address object, else assessor's.
-  const addrObj = (pick(summary, "Address", "address") ?? pick(a0, "Address", "address")) as Any | undefined;
-  const fullAddress = str(pick(addrObj, "FullAddress", "fullAddress"))
-    ?? [str(pick(addrObj, "AddressLine1", "addressLine1")), str(pick(addrObj, "AddressLine2", "addressLine2"))]
-        .filter(Boolean).join(", ");
+  const addr    = pick(summary, "address", "Address") as Any | undefined;
+  const details = pick(summary, "propertyDetails", "PropertyDetails") as Any | undefined;
+  const pv      = pick(summary, "propertyValue", "PropertyValue") as Any | undefined;
+  const assessedObj = pick(summary, "assessedValue", "AssessedValue");
+  const purchaseObj = pick(summary, "purchasePrice", "PurchasePrice");
 
-  // Owners
-  const currentOwners = arr(pick(summary, "CurrentOwners", "currentOwners") ?? pick(a0, "CurrentOwners", "currentOwners"))
-    .map(o => str(pick(o, "Name", "name")) ?? [str(pick(o,"FirstName","firstName")), str(pick(o,"LastName","lastName"))].filter(Boolean).join(" "))
+  const owners = arr(pick(summary, "currentOwners", "CurrentOwners"))
+    .map(ownerName)
     .filter((s): s is string => !!s);
-  const prevOwners = arr(pick(summary, "PreviousOwners", "previousOwners") ?? pick(a0, "PreviousOwners", "previousOwners"))
-    .map(o => str(pick(o, "Name", "name")) ?? [str(pick(o,"FirstName","firstName")), str(pick(o,"LastName","lastName"))].filter(Boolean).join(" "))
+  const prevOwners = arr(pick(summary, "previousOwners", "PreviousOwners"))
+    .map(ownerName)
     .filter((s): s is string => !!s);
 
-  // Values
-  const assessedObj = pick(summary, "AssessedValue", "assessedValue") ?? pick(a0, "AssessedValue", "assessedValue");
-  const marketObj   = pick(summary, "MarketValue", "marketValue", "EstimatedValue", "estimatedValue") ?? pick(a0, "MarketValue", "marketValue");
-  const purchaseObj = pick(summary, "PurchasePrice", "purchasePrice", "LastSale", "lastSale") ?? pick(a0, "PurchasePrice", "purchasePrice");
+  const fullAddress =
+    str(pick(addr, "fullAddress", "FullAddress")) ??
+    str(pick(addr, "addressLine1", "AddressLine1")) ??
+    "Unknown address";
 
-  const structure = (pick(a0, "Structure", "structure") ?? a0) as Any;
+  // Enformion returns lot size in square feet; show acres when it clearly is sqft.
+  const lotRaw = parseFloat(String(pick(details, "lotSize", "LotSize") ?? "").replace(/[^0-9.]/g, ""));
+  const lotAcres =
+    isFinite(lotRaw) && lotRaw > 0
+      ? lotRaw > 1000
+        ? (lotRaw / 43560).toFixed(2)
+        : String(lotRaw)
+      : undefined;
 
-  const data: PropertyData = {
-    id:             str(pick(rec, "PoseidonId", "poseidonId")) ?? str(pick(a0, "Apn", "apn")) ?? (fullAddress || "property"),
-    address:        fullAddress || "Unknown address",
-    city:           str(pick(addrObj, "City", "city")),
-    state:          str(pick(addrObj, "State", "state")),
-    zip:            str(pick(addrObj, "Zip", "zip", "PostalCode", "postalCode")),
-    apn:            str(pick(a0, "Apn", "apn") ?? pick(summary, "Apn", "apn")),
-    owners:         currentOwners,
+  const occ = pick(summary, "isOwnerOccupied", "IsOwnerOccupied", "ownerOccupied", "OwnerOccupied");
+
+  return {
+    id:
+      str(pick(rec, "poseidonId", "PoseidonId")) ??
+      str(pick(summary, "apn", "Apn")) ??
+      fullAddress,
+    address:        fullAddress,
+    city:           str(pick(addr, "city", "City")),
+    state:          str(pick(addr, "state", "State")),
+    zip:            str(pick(addr, "zipCode", "zip", "Zip", "postalCode", "PostalCode")),
+    apn:            str(pick(summary, "apn", "Apn")),
+    owners,
     previousOwners: prevOwners,
-    estimatedValue: money(pick(marketObj, "Price", "price", "Value", "value") ?? marketObj),
-    assessedValue:  money(pick(assessedObj, "Price", "price", "Value", "value") ?? assessedObj),
-    lastSalePrice:  money(pick(purchaseObj, "Price", "price", "Amount", "amount") ?? purchaseObj),
-    lastSaleDate:   str(pick(purchaseObj, "Date", "date", "SaleDate", "saleDate")),
-    taxAmount:      money(pick(summary, "TaxAmount", "taxAmount") ?? pick(a0, "TaxAmount", "taxAmount")),
-    yearBuilt:      str(pick(structure, "YearBuilt", "yearBuilt") ?? pick(summary, "YearBuilt", "yearBuilt")),
-    bedrooms:       str(pick(structure, "Bedrooms", "bedrooms")),
-    bathrooms:      str(pick(structure, "TotalBathrooms", "totalBathrooms", "Bathrooms", "bathrooms")),
-    squareFeet:     str(pick(structure, "LivingSquareFootage", "livingSquareFootage", "BuildingSquareFootage", "buildingSquareFootage", "SquareFootage", "squareFootage")),
-    lotAcres:       str(pick(structure, "Acres", "acres") ?? pick(a0, "Acres", "acres")),
-    propertyType:   str(pick(summary, "PropertyType", "propertyType") ?? pick(a0, "PropertyType", "propertyType", "LandUse", "landUse")),
-    ownerOccupied:  (() => { const v = pick(summary, "OwnerOccupied", "ownerOccupied") ?? pick(a0, "OwnerOccupied", "ownerOccupied"); return typeof v === "boolean" ? v : undefined; })(),
-  } as PropertyData;
-
-  return data;
+    estimatedValue: money(pick(pv, "totalValue", "TotalValue")),
+    assessedValue:  money(pick(assessedObj, "price", "Price")),
+    lastSalePrice:  money(pick(purchaseObj, "price", "Price")),
+    lastSaleDate:   str(pick(purchaseObj, "date", "Date")),
+    taxAmount:      money(pick(summary, "taxAmount", "TaxAmount")),
+    yearBuilt:      str(pick(details, "yearBuilt", "YearBuilt")),
+    bedrooms:       str(pick(details, "beds", "Beds", "bedrooms", "Bedrooms")),
+    bathrooms:      str(pick(details, "baths", "Baths", "bathrooms", "Bathrooms")),
+    squareFeet:     str(pick(details, "squareFootage", "SquareFootage", "livingArea", "LivingArea")),
+    lotAcres,
+    propertyType:   str(pick(details, "type", "Type")),
+    ownerOccupied:  typeof occ === "boolean" ? occ : undefined,
+  };
 }
