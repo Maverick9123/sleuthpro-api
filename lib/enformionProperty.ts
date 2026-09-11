@@ -57,7 +57,8 @@ export interface EnformionPropertyResponse {
 }
 
 export async function callEnformionProperty(
-  body: PropertyRequestBody
+  body: PropertyRequestBody,
+  searchType: string = "Property"
 ): Promise<EnformionPropertyResponse> {
   const apName     = process.env.ENFORMION_AP_NAME;
   const apPassword = process.env.ENFORMION_AP_PASSWORD;
@@ -75,6 +76,7 @@ export async function callEnformionProperty(
       "Accept":             "application/json",
       "galaxy-ap-name":     apName,
       "galaxy-ap-password": apPassword,
+      "galaxy-search-type": searchType,   // required by Enformion for API customers
     },
     body: JSON.stringify(body),
   });

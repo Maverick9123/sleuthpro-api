@@ -19,14 +19,15 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { street, city, state, zip, firstName, lastName, debug } = req.body as {
-    street?:    string;
-    city?:      string;
-    state?:     string;
-    zip?:       string;
-    firstName?: string;
-    lastName?:  string;
-    debug?:     boolean;
+  const { street, city, state, zip, firstName, lastName, debug, searchType } = req.body as {
+    street?:     string;
+    city?:       string;
+    state?:      string;
+    zip?:        string;
+    firstName?:  string;
+    lastName?:   string;
+    debug?:      boolean;
+    searchType?: string;   // debug-only override to confirm the exact galaxy-search-type
   };
 
   // Need EITHER an address (street) OR an owner name (last name) to search.
@@ -72,7 +73,7 @@ export default async function handler(
         : {}),
       Page:           1,
       ResultsPerPage: 10,
-    });
+    }, searchType || "Property");
 
     // Debug toggle: surface the raw Enformion payload so we can confirm the
     // exact field nesting/casing against a real response. Never sent to the app.
