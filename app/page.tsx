@@ -14,7 +14,7 @@ import type { BankruptcyData } from "../lib/enformionBankruptcy";
 
 type SearchType = "name" | "phone" | "email" | "address" | "property" | "bankruptcy";
 
-const TYPES: { key: SearchType; label: string; icon: string }[] = [
+const ALL_TYPES: { key: SearchType; label: string; icon: string }[] = [
   { key: "name",       label: "Name",       icon: "👤" },
   { key: "phone",      label: "Phone",      icon: "📞" },
   { key: "email",      label: "Email",      icon: "✉️" },
@@ -22,6 +22,13 @@ const TYPES: { key: SearchType; label: string; icon: string }[] = [
   { key: "property",   label: "Property",   icon: "🏡" },
   { key: "bankruptcy", label: "Bankruptcy", icon: "⚖️" },
 ];
+
+// Bankruptcy (Enformion Debt Search V2) needs the Debt Search V2 product enabled
+// on the Access Profile. Hidden until NEXT_PUBLIC_ENABLE_BANKRUPTCY="1" is set in
+// Vercel (build-time flag) — flip it on once the product is provisioned. Code is
+// complete and correct; this only controls visibility.
+const BANKRUPTCY_ENABLED = process.env.NEXT_PUBLIC_ENABLE_BANKRUPTCY === "1";
+const TYPES = ALL_TYPES.filter((t) => t.key !== "bankruptcy" || BANKRUPTCY_ENABLED);
 
 const FCRA_KEY = "sq_fcra_accepted_v1";
 
