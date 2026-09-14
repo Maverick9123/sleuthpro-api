@@ -7,19 +7,23 @@
 // total Enformion cost for now.
 // DreamTeamApps © 2026
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { PersonData } from "../lib/transformEnformion";
 import type { PropertyData } from "../lib/enformionProperty";
+import type { BankruptcyData } from "../lib/enformionBankruptcy";
 
-type SearchType = "name" | "phone" | "email" | "address" | "property";
+type SearchType = "name" | "phone" | "email" | "address" | "property" | "bankruptcy";
 
 const TYPES: { key: SearchType; label: string; icon: string }[] = [
-  { key: "name",     label: "Name",     icon: "👤" },
-  { key: "phone",    label: "Phone",    icon: "📞" },
-  { key: "email",    label: "Email",    icon: "✉️" },
-  { key: "address",  label: "Address",  icon: "🏠" },
-  { key: "property", label: "Property", icon: "🏡" },
+  { key: "name",       label: "Name",       icon: "👤" },
+  { key: "phone",      label: "Phone",      icon: "📞" },
+  { key: "email",      label: "Email",      icon: "✉️" },
+  { key: "address",    label: "Address",    icon: "🏠" },
+  { key: "property",   label: "Property",   icon: "🏡" },
+  { key: "bankruptcy", label: "Bankruptcy", icon: "⚖️" },
 ];
+
+const FCRA_KEY = "sq_fcra_accepted_v1";
 
 interface Fields {
   firstName: string; middleName: string; lastName: string; state: string;
@@ -39,14 +43,31 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<PersonData[] | null>(null);
   const [props, setProps] = useState<PropertyData[] | null>(null);
+  const [bks, setBks] = useState<BankruptcyData[] | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<PersonData | null>(null);
   const [selectedProp, setSelectedProp] = useState<PropertyData | null>(null);
+  const [selectedBk, setSelectedBk] = useState<BankruptcyData | null>(null);
+
+  // FCRA attestation gate — must be accepted once (per browser) before searching.
+  const [accepted, setAccepted] = useState(true); // assume yes to avoid SSR flash; corrected on mount
+  useEffect(() => {
+    try {
+      setAccepted(window.localStorage.getItem(FCRA_KEY) === "yes");
+    } catch {
+      setAccepted(false);
+    }
+  }, []);
+  function acceptFcra() {
+    try { window.localStorage.setItem(FCRA_KEY, "yes"); } catch { /* private mode — session only */ }
+    setAccepted(true);
+  }
 
   const set = (k: keyof Fields, v: string) => setF((p) => ({ ...p, [k]: v }));
 
   function pickType(t: SearchType) {
     setType(t); setF(EMPTY); setError(null);
-    setPeople(null); setProps(null); setSelectedPerson(null); setSelectedProp(null);
+    setPeople(null); setProps(null); setBks(null);
+    setSelectedPerson(null); setSelectedProp(null); setSelectedBk(null);
   }
 
   async function post(path: string, body: unknown) {
@@ -61,8 +82,8 @@ export default function Home() {
   }
 
   async function runSearch() {
-    setError(null); setSelectedPerson(null); setSelectedProp(null);
-    setPeople(null); setProps(null);
+    setError(null); setSelectedPerson(null); setSelectedProp(null); setSelectedBk(null);
+    setPeople(null); setProps(null); setBks(null);
 
     const t = (s: string) => s.trim();
     if (type === "name" && (!t(f.firstName) || !t(f.lastName))) return setError("Enter a first and last name.");
@@ -70,6 +91,7 @@ export default function Home() {
     if (type === "email" && !t(f.emailAddress)) return setError("Enter an email address.");
     if ((type === "address" || type === "property") && (!t(f.street) || !t(f.city) || !t(f.addrState)))
       return setError("Enter a street, city, and state.");
+    if (type === "bankruptcy" && !t(f.lastName)) return setError("Enter at least a last name.");
 
     setLoading(true);
     try {
@@ -95,12 +117,18 @@ export default function Home() {
         });
         setPeople(data);
         if (!data.length) setError("No records found at that address.");
-      } else {
+      } else if (type === "property") {
         const data: PropertyData[] = await post("property", {
           street: t(f.street), city: t(f.city), state: t(f.addrState), zip: t(f.zip) || undefined,
         });
         setProps(data);
         if (!data.length) setError("No property records found. Check the address, or try without the ZIP.");
+      } else {
+        const data: BankruptcyData[] = await post("bankruptcy", {
+          firstName: t(f.firstName) || undefined, lastName: t(f.lastName), state: t(f.state) || undefined,
+        });
+        setBks(data);
+        if (!data.length) setError("No bankruptcy records found for that name.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed. Please try again.");
@@ -113,7 +141,9 @@ export default function Home() {
 
   return (
     <>
-      <div className="page">
+      {!accepted && <FcraGate onAccept={acceptFcra} />}
+
+      <div className="page" aria-hidden={!accepted}>
         <header className="top">
           <div className="brand">🔎 Search Quest</div>
           <div className="tag">People &amp; property lookups</div>
@@ -123,6 +153,8 @@ export default function Home() {
           <PersonReport person={selectedPerson} onBack={() => setSelectedPerson(null)} nonZero={nonZero} />
         ) : selectedProp ? (
           <PropertyReport property={selectedProp} onBack={() => setSelectedProp(null)} nonZero={nonZero} />
+        ) : selectedBk ? (
+          <BankruptcyReport record={selectedBk} onBack={() => setSelectedBk(null)} />
         ) : (
           <main className="wrap">
             <h1>Find the people &amp; property in your life</h1>
@@ -166,10 +198,18 @@ export default function Home() {
                     </div>
                   </>
                 )}
+                {type === "bankruptcy" && (
+                  <>
+                    <input placeholder="First name (optional)" value={f.firstName} onChange={(e) => set("firstName", e.target.value)} />
+                    <input placeholder="Last name *" value={f.lastName} onChange={(e) => set("lastName", e.target.value)} />
+                    <input placeholder="State (optional — e.g. GA)" value={f.state} onChange={(e) => set("state", e.target.value)} />
+                    <p className="note">Searches public bankruptcy court records nationwide. Records may not exist for every name, and matches should be confirmed against official court sources.</p>
+                  </>
+                )}
               </div>
 
               <button className="go" onClick={runSearch} disabled={loading}>
-                {loading ? "Searching…" : type === "property" ? "Look Up Property" : "Search"}
+                {loading ? "Searching…" : type === "property" ? "Look Up Property" : type === "bankruptcy" ? "Search Bankruptcy Records" : "Search"}
               </button>
 
               {error && <div className="err">{error}</div>}
@@ -216,9 +256,34 @@ export default function Home() {
               </section>
             )}
 
+            {bks && bks.length > 0 && (
+              <section className="results">
+                <div className="rcount">{bks.length} {bks.length === 1 ? "record" : "records"}</div>
+                {bks.map((b) => (
+                  <button key={b.id} className="rcard" onClick={() => setSelectedBk(b)}>
+                    <div className="ravatar">⚖️</div>
+                    <div className="rbody">
+                      <div className="rname">{b.debtorName}</div>
+                      <div className="rsub">
+                        {[b.recordType ?? "Bankruptcy", b.chapter ? `Chapter ${b.chapter}` : null, b.filingDate]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                      {(b.city || b.state) && (
+                        <span className="value">{[b.city, b.state].filter(Boolean).join(", ")}</span>
+                      )}
+                    </div>
+                    <div className="chev">›</div>
+                  </button>
+                ))}
+              </section>
+            )}
+
             <p className="fcra">
-              For personal use only. Search Quest is not a consumer reporting agency, and its data may not be used
-              for tenant screening, employment, credit, or any purpose covered by the Fair Credit Reporting Act (FCRA).
+              For personal use only. Search Quest is not a consumer reporting agency, and its data — including public
+              records such as bankruptcy filings — may not be used for tenant screening, employment, credit, insurance,
+              or any other purpose covered by the Fair Credit Reporting Act (FCRA). Public-record data may be incomplete
+              or inaccurate and should be verified against official sources.
             </p>
           </main>
         )}
@@ -292,6 +357,22 @@ export default function Home() {
         .li .d{color:var(--muted);font-size:13px}
         .pills-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
         .tagpill{font-size:12px;font-weight:700;color:#fff;background:var(--burg);border-radius:999px;padding:4px 10px}
+        .note{color:var(--muted);font-size:12.5px;line-height:1.45;margin:2px 2px 0}
+        /* FCRA attestation gate */
+        .gate{position:fixed;inset:0;z-index:1000;background:rgba(46,16,26,.55);
+          display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(3px)}
+        .gatebox{background:var(--card);border-radius:18px;max-width:560px;width:100%;
+          padding:26px 24px;box-shadow:0 20px 60px rgba(0,0,0,.35);max-height:92vh;overflow:auto}
+        .gatebox h2{margin:0 0 4px;font-size:22px;color:var(--deep)}
+        .gatebox .lead{color:var(--muted);margin:0 0 16px;font-size:14px}
+        .gaterules{list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:10px}
+        .gaterules li{display:flex;gap:10px;align-items:flex-start;font-size:14px;line-height:1.4}
+        .gaterules .x{color:var(--burg);font-weight:800;flex:0 0 auto}
+        .gatecheck{display:flex;gap:10px;align-items:flex-start;background:#fdf8f9;border:1px solid var(--light);
+          border-radius:12px;padding:12px 14px;font-size:13.5px;line-height:1.45;cursor:pointer;margin-bottom:14px}
+        .gatecheck input{width:20px;height:20px;flex:0 0 auto;margin:1px 0 0;accent-color:var(--burg);cursor:pointer}
+        .gate .go{margin-top:0}
+        .gatelaw{color:var(--muted);font-size:11.5px;line-height:1.4;margin:14px 0 0}
         @media(max-width:520px){ h1{font-size:24px} }
       `}</style>
     </>
@@ -410,6 +491,86 @@ function PropertyReport({ property, onBack, nonZero }: { property: PropertyData;
           {p.previousOwners.map((o, i) => (<div className="li" key={i}><div className="t">{o}</div></div>))}
         </div>
       )}
+    </div>
+  );
+}
+
+function BankruptcyReport({ record, onBack }: { record: BankruptcyData; onBack: () => void }) {
+  const b = record;
+  const cityStateZip = [[b.city, b.state].filter(Boolean).join(", "), b.zip].filter(Boolean).join(" ");
+  const kv = (k: string, v?: string) => (v ? <div className="kv"><span className="k">{k}</span><span className="v">{v}</span></div> : null);
+  return (
+    <div className="report">
+      <button className="back" onClick={onBack}>‹ Back to results</button>
+      <div className="rhead">
+        <h2>{b.debtorName}</h2>
+        {cityStateZip && <div className="m">{cityStateZip}</div>}
+        <div className="pills-badges">
+          <span className="tagpill">{b.recordType ?? "Bankruptcy"}</span>
+          {b.chapter && <span className="tagpill">Chapter {b.chapter}</span>}
+          {b.status && <span className="tagpill">{b.status}</span>}
+        </div>
+      </div>
+
+      <div className="sec">
+        <h3>Filing Details</h3>
+        {kv("Record type", b.recordType ?? "Bankruptcy")}
+        {kv("Chapter", b.chapter)}
+        {kv("Filing type", b.filingType)}
+        {kv("Filing date", b.filingDate)}
+        {kv("Status", b.status)}
+        {kv("Case number", b.caseNumber)}
+        {kv("Court / agency", b.court)}
+        {kv("Amount", b.amount)}
+        {b.address && kv("Address on file", [b.address, cityStateZip].filter(Boolean).join(", "))}
+      </div>
+
+      <p className="fcra">
+        Public court-record data, shown for personal use only. It may be incomplete or out of date, may reflect a
+        different person with the same name, and may not be used for any FCRA-covered decision. Verify against
+        official court records before relying on it.
+      </p>
+    </div>
+  );
+}
+
+function FcraGate({ onAccept }: { onAccept: () => void }) {
+  const [agree, setAgree] = useState(false);
+  return (
+    <div className="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+      <div className="gatebox">
+        <h2 id="gate-title">Before you search</h2>
+        <p className="lead">
+          Search Quest provides public-record and contact information for <strong>personal use only</strong>. It is
+          <strong> not</strong> a consumer reporting agency, and the results are <strong>not</strong> a consumer report.
+        </p>
+
+        <ul className="gaterules">
+          <li><span className="x">✕</span><span>Do not use it for <strong>employment</strong> screening or hiring decisions.</span></li>
+          <li><span className="x">✕</span><span>Do not use it for <strong>tenant or housing</strong> screening.</span></li>
+          <li><span className="x">✕</span><span>Do not use it for <strong>credit, lending, or insurance</strong> decisions.</span></li>
+          <li><span className="x">✕</span><span>Do not use it to <strong>stalk, harass, or harm</strong> anyone.</span></li>
+        </ul>
+
+        <label className="gatecheck">
+          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+          <span>
+            I understand and agree that I will not use Search Quest or any information from it — including public
+            records such as bankruptcy filings — for employment, tenant screening, credit, insurance, or any other
+            purpose covered by the Fair Credit Reporting Act (FCRA) or the Driver&apos;s Privacy Protection Act, and I
+            agree to use it only for lawful, personal purposes.
+          </span>
+        </label>
+
+        <button className="go" disabled={!agree} onClick={onAccept}>
+          I Agree &amp; Continue
+        </button>
+
+        <p className="gatelaw">
+          Misuse of consumer information can carry civil and criminal penalties. By continuing you accept full
+          responsibility for how you use these results.
+        </p>
+      </div>
     </div>
   );
 }
