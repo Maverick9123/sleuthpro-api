@@ -12,7 +12,8 @@
     "@upstash/redis": "^1.38.0",
     "next": "^15.3.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@apple/app-store-server-library": "^1.5.0"
   },
   "devDependencies": {
     "@types/node": "^20",
