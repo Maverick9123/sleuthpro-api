@@ -6,6 +6,7 @@ import {
 }                              from "../../../lib/enformionProperty";
 import type { PropertyData }   from "../../../lib/enformionProperty";
 import { rateGuard, clientIp } from "../../../lib/rateGuard";
+import { installId, spendLookup, refundLookup } from "../../../lib/entitlement";
 import { toStateCode }         from "../../../lib/usStates";
 
 // Property Lookup — 5th Search Quest search type.
@@ -56,6 +57,22 @@ export default async function handler(
     });
   }
 
+  // Per-install entitlement. rateGuard above stops floods and bankruptcy; it
+  // cannot see a user who quietly burns their free lookups and leaves, because
+  // it only knows an IP. This does, and it must sit BEFORE the paid call.
+  const install = installId(req.headers);
+  const ent = await spendLookup(install);
+  if (!ent.ok) {
+    return res.status(402).json({
+      error:
+        ent.reason === "id_required"
+          ? "Please update the app to keep searching."
+          : "You're out of lookups. Buy more credits to keep searching.",
+      code: ent.reason,
+      remaining: 0,
+    });
+  }
+
   try {
     // "City, ST 12345" for AddressLine2.
     const addrLine2 = [city?.trim(), toStateCode(state), zip?.trim()]
@@ -82,6 +99,7 @@ export default async function handler(
     return res.status(200).json(results);
   } catch (err) {
     console.error("[search/property] EnformionGO error:", err);
+    await refundLookup(install, ent.mode);   // never bill for a search we failed to deliver
     return res.status(500).json({ error: "Search failed. Please try again." });
   }
 }
